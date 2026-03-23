@@ -1,0 +1,66 @@
+# Pipeline work
+import pandas as pd
+import numpy as np
+import os
+def data_prepare(folder_path: str):
+    all_data = []
+    data_count = 0
+    missing_list = []
+
+    for i in range(126):  
+        file_path = os.path.join(folder_path, f"stock_{i}.csv")
+
+        try:
+            df = pd.read_csv(file_path)
+
+            # check missing values
+            if df.isnull().values.any():
+                missing_list.append(i)
+
+            # sort
+            df = df.sort_values(['time_id', 'seconds_in_bucket'])
+            
+            # WAP (add small epsilon to avoid /0)
+            df['wap'] = (
+                df['bid_price1'] * df['ask_size1'] +
+                df['ask_price1'] * df['bid_size1']
+            ) / (df['bid_size1'] + df['ask_size1'] + 1e-6)
+
+            # log return
+            df['log_return'] = df.groupby('time_id')['wap'].transform(
+                lambda x: np.log(x).diff()
+            )
+            # spread
+            df['spread'] = df['ask_price1'] - df['bid_price1']
+
+            # aggregation
+            agg = df.groupby('time_id').agg(
+                volatility=('log_return', lambda x: np.sqrt(np.nansum(x**2))),
+                wap_mean=('wap', 'mean'),
+                wap_std=('wap', 'std'),
+                spread_mean=('spread', 'mean'),
+                volume=('bid_size1', 'sum'),
+                observations=('time_id', 'count')
+            ).reset_index()
+
+            agg['stock_id'] = i
+
+            all_data.append(agg)
+            data_count += 1
+
+        except Exception as e:
+            print(f"Error in stock_{i}: {e}")
+
+    final_df = pd.concat(all_data, ignore_index=True)
+
+    print(f"Finished. Processed {data_count} files:)")
+    print(f"{len(missing_list)} files have missing values")
+    print(f"Stock IDs with missing values: {missing_list}")
+
+    return final_df
+
+# Read Data and preprocess
+all_data = data_prepare("individual_book_train") # Please input your own path of the filefolder here
+
+all_data.head()
+all_data.info()
