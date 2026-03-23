@@ -1,4 +1,4 @@
-# Pipeline work
+# Data Cleaning & Preprocessing
 import pandas as pd
 import numpy as np
 import os
@@ -58,9 +58,27 @@ def data_prepare(folder_path: str):
     print(f"Stock IDs with missing values: {missing_list}")
 
     return final_df
-
-# Read Data and preprocess
 all_data = data_prepare("individual_book_train") # Please input your own path of the filefolder here
 
+## This block is used to combine and preprocess the second dataset if we decide to use both data sources
+
+
+
+
+# Data Overview
 all_data.head()
 all_data.info()
+
+
+# This block will be used for Exploratory Data Analysis:
+
+## Data Visualization
+# Plot key variables to understand distributions and relationships
+
+### Stationarity Check
+# Test whether the time series is stationary (e.g., ADF test)
+
+### Trend & Seasonality Analysis
+# Examine underlying trends and possible seasonal patterns
+
+## Statistical testing
