@@ -1,4 +1,6 @@
 # Data Cleaning & Preprocessing
+
+## Bucket-level Data
 import pandas as pd
 import numpy as np
 import os
@@ -70,15 +72,110 @@ all_data.head()
 all_data.info()
 
 
-# This block will be used for Exploratory Data Analysis:
+### Plot observations in each time bucket: 
+### I found that different time windows contain different numbers of observations, which might influence our future volatility prediction.
+### So just want to test their association.
+import matplotlib.pyplot as plt
+plt.figure(figsize=(8, 5))
+plt.hist(all_data["observations"], bins=30, edgecolor="black")
+plt.xlabel("Number of observations per bucket")
+plt.ylabel("Frequency")
+plt.title("Distribution of observations across time_id buckets")
+plt.show()
 
-## Data Visualization
-# Plot key variables to understand distributions and relationships
+### Observations vs Volatility
+plt.figure(figsize=(6,4))
+plt.scatter(all_data["observations"], all_data["volatility"], alpha=0.2)
+plt.xlabel("Observations")
+plt.ylabel("Volatility")
+plt.title("Observations vs Volatility")
+plt.show()
 
-### Stationarity Check
-# Test whether the time series is stationary (e.g., ADF test)
+all_data["volatility_scaled"] = all_data["volatility"] / np.sqrt(all_data["observations"])
+print(all_data[["observations", "volatility", "volatility_scaled"]].corr())
 
-### Trend & Seasonality Analysis
-# Examine underlying trends and possible seasonal patterns
 
-## Statistical testing
+import matplotlib.pyplot as plt
+plt.figure(figsize=(8,4))
+plt.hist(all_data["volatility"], bins=50, edgecolor="black")
+plt.xlabel("Volatility")
+plt.ylabel("Frequency")
+plt.title("Distribution of volatility")
+plt.show()
+
+one_stock = all_data[all_data["stock_id"] == 0].sort_values("time_id")
+
+import matplotlib.pyplot as plt
+plt.figure(figsize=(12,4))
+plt.plot(one_stock["time_id"], one_stock["volatility"])
+plt.xlabel("time_id")
+plt.ylabel("Volatility")
+plt.title("Volatility over time for stock 0")
+plt.show()
+
+
+# 30s-level
+def comp_vol(x):
+    return np.sqrt(np.nansum(x ** 2))
+
+def data_prepare_30s(folder_path: str):
+    # This function considers the handling method in workshop material, but I am not pretty sure if it is the rightest approach.
+    all_data = []
+    data_count = 0
+    missing_list = []
+
+    for i in range(126):
+        file_path = os.path.join(folder_path, f"stock_{i}.csv")
+
+        try:
+            df = pd.read_csv(file_path)
+
+            if df.isnull().values.any():
+                missing_list.append(i)
+
+            df = df.sort_values(["time_id", "seconds_in_bucket"]).copy()
+
+            # WAP
+            df["wap"] = (
+                df["bid_price1"] * df["ask_size1"] +
+                df["ask_price1"] * df["bid_size1"]
+            ) / (df["bid_size1"] + df["ask_size1"] + 1e-6)
+
+            # log return within each time_id
+            df["log_return"] = df.groupby("time_id")["wap"].transform(
+                lambda x: np.log(x).diff()
+            )
+            # spread
+            df["spread"] = df["ask_price1"] - df["bid_price1"]
+
+            # divide 10-min bucket into 30-second intervals
+            # 0-29 -> 1, 30-59 -> 2, ...
+            df["time_bucket_30s"] = (df["seconds_in_bucket"] // 30) + 1
+
+            # aggregate within each 30-second interval
+            agg = df.groupby(["time_id", "time_bucket_30s"]).agg(
+                volatility=("log_return", comp_vol),
+                wap_mean=("wap", "mean"),
+                wap_std=("wap", "std"),
+                spread_mean=("spread", "mean"),
+                volume=("bid_size1", "sum"),
+                observations=("seconds_in_bucket", "nunique")
+            ).reset_index()
+
+            agg["stock_id"] = i
+
+            all_data.append(agg)
+            data_count += 1
+
+        except Exception as e:
+            print(f"Error in stock_{i}: {e}")
+
+    final_df = pd.concat(all_data, ignore_index=True)
+
+    print(f"Finished. Processed {data_count} files.")
+    print(f"{len(missing_list)} files have missing values")
+
+    if len(missing_list) > 0:
+        print(f"Stock IDs with missing values: {missing_list}")
+
+    return final_df
